@@ -9,16 +9,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 
-import {
-  format,
-  isSameDay,
-  addMinutes,
-  isAfter,
-  setHours,
-  setMinutes,
-  isBefore,
-  startOfDay,
-} from "date-fns";
+import { format, isBefore, startOfDay } from "date-fns";
 
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -183,18 +174,13 @@ export default function CustomerAppointmentForm() {
 
   // Derived state for dentist details
   const dentistToUse: Dentist | null = React.useMemo(() => {
-    if (selectedDentistId === "none") {
-      return dentists.length > 0 ? dentists[0] : null;
-    }
+    if (selectedDentistId === "none") return null; // ✅ Return no dentist
     return dentists.find((d) => d.$id === selectedDentistId) || null;
   }, [selectedDentistId, dentists]);
 
-  const selectedDentistName = React.useMemo(() => {
-    return dentistToUse?.name ?? "";
-  }, [dentistToUse]);
+  const selectedDentistName = dentistToUse?.name ?? "";
 
-  // Derived state for available time slots
-  // Derived: available time slots (simple conflict checking)
+  // Derived state for available time slots (simple conflict checking)
   const slots = React.useMemo(() => {
     if (!selectedDate) return [];
 
@@ -242,7 +228,7 @@ export default function CustomerAppointmentForm() {
 
     const dateKey = format(selectedDate, "yyyy-MM-dd");
 
-    if (!selectedServiceName || !selectedDentistName) {
+    if (!selectedServiceName) {
       console.error("Missing required names/details for submission.");
       setIsSubmitting(false);
       return;
@@ -258,7 +244,8 @@ export default function CustomerAppointmentForm() {
         dentistId: selectedDentistId === "none" ? null : selectedDentistId,
 
         serviceName: selectedServiceName,
-        dentistName: selectedDentistName,
+        dentistName:
+          selectedDentistId === "none" ? "No Preference" : selectedDentistName,
         serviceDuration: duration,
 
         date: selectedDate.toISOString(),
@@ -282,17 +269,98 @@ export default function CustomerAppointmentForm() {
     }
   }
 
+  // Dental-themed subtle background SVG pattern component
+  function DentalBackground() {
+    return (
+      <svg
+        aria-hidden="true"
+        className="fixed inset-0 -z-10 w-full h-full opacity-10"
+        width="100%"
+        height="100%"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ pointerEvents: "none" }}
+      >
+        <defs>
+          <pattern
+            id="dentalPattern"
+            x="0"
+            y="0"
+            width="100"
+            height="100"
+            patternUnits="userSpaceOnUse"
+          >
+            {/* Tooth icon */}
+            <path
+              d="M30 10c-6 0-10 8-10 14s4 16 10 16 10-8 10-14-4-16-10-16z"
+              stroke="#3ABAB4"
+              strokeWidth="2"
+              fill="none"
+              opacity="0.15"
+            />
+            {/* Toothbrush */}
+            <rect
+              x="60"
+              y="20"
+              width="8"
+              height="30"
+              stroke="#3ABAB4"
+              strokeWidth="2"
+              fill="none"
+              opacity="0.15"
+              rx="2"
+              ry="2"
+            />
+            <line
+              x1="60"
+              y1="15"
+              x2="68"
+              y2="15"
+              stroke="#3ABAB4"
+              strokeWidth="2"
+              opacity="0.15"
+            />
+            <line
+              x1="60"
+              y1="55"
+              x2="68"
+              y2="55"
+              stroke="#3ABAB4"
+              strokeWidth="2"
+              opacity="0.15"
+            />
+          </pattern>
+        </defs>
+
+        <rect width="100%" height="100%" fill="url(#dentalPattern)" />
+      </svg>
+    );
+  }
+
   // Success screen
   if (success)
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="max-w-lg w-full text-center p-8 shadow-lg border-green-500 border-t-8 rounded-xl">
-          <CheckCircle className="h-20 w-20 text-green-500 mx-auto mb-5" />
-          <h1 className="text-3xl font-extrabold">Appointment Sent!</h1>
-          <p className="mt-2 text-gray-600">
-            Thank you **{name}**, your request is now waiting for approval.
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-teal-50 to-white relative overflow-hidden rounded-xl">
+        <DentalBackground />
+        <Card className="max-w-lg w-full text-center p-8 shadow-lg border-teal-500 border-t-8 rounded-xl bg-white/90 backdrop-blur-sm">
+          <img
+            src="/Egargue-logo2.PNG"
+            alt="Egargue Dental Group Logo"
+            className="mx-auto mb-6 h-20 object-contain"
+            loading="lazy"
+          />
+          <CheckCircle className="h-20 w-20 text-teal-500 mx-auto mb-5" />
+          <h1 className="text-3xl font-extrabold text-teal-700">
+            Appointment Sent!
+          </h1>
+          <p className="mt-2 text-gray-700">
+            Thank you <span className="font-semibold">{name}</span>, your
+            request is now waiting for approval.
           </p>
-          <Button className="mt-6" onClick={handleResetAndRefresh}>
+          <Button
+            className="mt-6 bg-teal-600 hover:bg-teal-700"
+            onClick={handleResetAndRefresh}
+          >
             Book another appointment
           </Button>
         </Card>
@@ -301,10 +369,29 @@ export default function CustomerAppointmentForm() {
 
   // Main form
   return (
-    <div className="max-w-4xl mx-auto p-10 mt-10 bg-white shadow-xl rounded-xl">
-      <h1 className="text-3xl font-bold mb-6 flex items-center gap-3 text-primary">
-        <CalendarIcon className="h-7 w-7" /> Book Your Appointment
-      </h1>
+    <div className="min-h-screen relative bg-gradient-to-b from-teal-50 to-white overflow-hidden rounded-xl p-10 max-w-9xl mx-auto shadow-xl">
+      <DentalBackground />
+
+      {/* Glass header card with logo + brand name */}
+      <Card className="flex items-center gap-4 p-6 mb-10 shadow-lg border-teal-500 border-t-8 rounded-xl bg-white/70 backdrop-blur-md">
+        <img
+          src="/Egargue-logo2.PNG"
+          alt="Egargue Dental Group Logo"
+          className="h-20 w-auto object-contain"
+          loading="lazy"
+        />
+        <div>
+          {/* <h1 className="text-3xl font-extrabold text-teal-700 tracking-wide">
+            EGARGUE
+          </h1>
+          <h2 className="text-xl font-semibold text-gray-700 tracking-wide">
+            DENTAL GROUP
+          </h2> */}
+          <p className="text-sm text-gray-500 mt-1">
+            Quality Service Since 1992
+          </p>
+        </div>
+      </Card>
 
       <form
         onSubmit={handleSubmit}
@@ -312,7 +399,7 @@ export default function CustomerAppointmentForm() {
       >
         {/* LEFT */}
         <div className="space-y-6">
-          <h3 className="font-semibold text-xl flex items-center gap-2">
+          <h3 className="font-semibold text-xl flex items-center gap-2 text-teal-700">
             <Clock className="h-5 w-5" /> Select Date & Time
           </h3>
 
@@ -325,10 +412,10 @@ export default function CustomerAppointmentForm() {
               date.getDay() === 0 ||
               date.getDay() === 6
             }
-            className="rounded-md border shadow"
+            className="rounded-md border shadow w-full md:w-1/2 border-gray-300"
           />
 
-          <h3 className="font-semibold text-lg">
+          <h3 className="font-semibold text-lg text-teal-700">
             Available Slots — {selectedDate && format(selectedDate, "MMM d")}
           </h3>
 
@@ -348,6 +435,7 @@ export default function CustomerAppointmentForm() {
                   type="button"
                   variant={selectedTime === t ? "default" : "outline"}
                   onClick={() => setSelectedTime(t)}
+                  className="text-teal-700 border-teal-600 hover:bg-teal-600 hover:text-white"
                 >
                   {t}
                 </Button>
@@ -362,7 +450,7 @@ export default function CustomerAppointmentForm() {
 
         {/* RIGHT */}
         <div className="space-y-6">
-          <h3 className="font-semibold text-xl flex items-center gap-2">
+          <h3 className="font-semibold text-xl flex items-center gap-2 text-teal-700">
             <User className="h-5 w-5" /> Your Details
           </h3>
 
@@ -395,7 +483,7 @@ export default function CustomerAppointmentForm() {
             />
           </div>
 
-          <h3 className="font-semibold text-xl flex items-center gap-2">
+          <h3 className="font-semibold text-xl flex items-center gap-2 text-teal-700">
             <Stethoscope className="h-5 w-5" /> Preferences
           </h3>
 
@@ -444,7 +532,7 @@ export default function CustomerAppointmentForm() {
 
           <Button
             type="submit"
-            className="w-full py-3 text-lg font-bold"
+            className="w-full py-3 text-lg font-bold bg-teal-600 hover:bg-teal-700"
             disabled={
               isSubmitting ||
               isLoadingData ||
