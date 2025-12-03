@@ -76,6 +76,29 @@ const DENTISTS = "dentists";
 const BOOKINGS = "appointments";
 
 // -----------------------------------------
+// STATIC TIME OPTIONS (30-min intervals)
+// -----------------------------------------
+const TIME_OPTIONS = [
+  "09:00 AM",
+  "09:30 AM",
+  "10:00 AM",
+  "10:30 AM",
+  "11:00 AM",
+  "11:30 AM",
+  "12:00 PM",
+  "12:30 PM",
+  "01:00 PM",
+  "01:30 PM",
+  "02:00 PM",
+  "02:30 PM",
+  "03:00 PM",
+  "03:30 PM",
+  "04:00 PM",
+  "04:30 PM",
+  "05:00 PM",
+];
+
+// -----------------------------------------
 // FETCH FUNCTIONS
 // -----------------------------------------
 async function fetchServices(): Promise<Service[]> {
@@ -91,56 +114,9 @@ async function fetchDentists(): Promise<Dentist[]> {
 async function fetchBookedSlots(dateKey: string): Promise<Booking[]> {
   const res = await databases.listDocuments(DB, BOOKINGS, [
     Query.equal("dateKey", dateKey),
+    Query.notEqual("status", "cancelled"),
   ]);
   return res.documents as unknown as Booking[];
-}
-
-// -----------------------------------------
-// SLOT GENERATOR
-// -----------------------------------------
-function generateAvailableSlots(
-  date: Date,
-  dentist: Dentist,
-  booked: Booking[],
-  duration: number
-): string[] {
-  const { startHour, endHour } = dentist;
-  const slots: string[] = [];
-
-  let currentTime = setMinutes(setHours(date, startHour), 0);
-  const endTime = setMinutes(setHours(date, endHour), 0);
-
-  if (isSameDay(date, new Date())) {
-    const now = new Date();
-    let proposedStartTime = addMinutes(now, 30);
-
-    const minutes = proposedStartTime.getMinutes();
-    const roundedMinutes = minutes < 30 ? 30 : 60;
-    proposedStartTime = addMinutes(proposedStartTime, roundedMinutes - minutes);
-
-    if (isAfter(proposedStartTime, currentTime)) {
-      currentTime = proposedStartTime;
-    }
-
-    if (isAfter(currentTime, endTime)) {
-      currentTime = endTime;
-    }
-  }
-
-  while (isBefore(currentTime, endTime)) {
-    const endSlot = addMinutes(currentTime, duration);
-
-    if (isAfter(endSlot, endTime)) break;
-
-    const slot = format(currentTime, "hh:mm a");
-    const taken = booked.some((b) => b.time === slot);
-
-    if (!taken) slots.push(slot);
-
-    currentTime = addMinutes(currentTime, 30);
-  }
-
-  return slots;
 }
 
 // -----------------------------------------
@@ -218,24 +194,14 @@ export default function CustomerAppointmentForm() {
   }, [dentistToUse]);
 
   // Derived state for available time slots
+  // Derived: available time slots (simple conflict checking)
   const slots = React.useMemo(() => {
-    if (isLoadingData || !selectedDate || !dentistToUse || !selectedServiceId) {
-      return [];
-    }
-    return generateAvailableSlots(
-      selectedDate,
-      dentistToUse,
-      bookedSlots,
-      duration
-    );
-  }, [
-    selectedDate,
-    dentistToUse,
-    bookedSlots,
-    duration,
-    isLoadingData,
-    selectedServiceId,
-  ]);
+    if (!selectedDate) return [];
+
+    const bookedTimes = bookedSlots.map((b) => b.time);
+
+    return TIME_OPTIONS.filter((t) => !bookedTimes.includes(t));
+  }, [selectedDate, bookedSlots]);
 
   // Reset selected time when date/preferences change
   React.useEffect(() => {
