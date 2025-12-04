@@ -41,6 +41,7 @@ export interface Dentist {
   name: string;
   startHour: number;
   endHour: number;
+  branchId: string;
 }
 
 export interface Booking {
@@ -109,6 +110,10 @@ async function fetchBookedSlots(dateKey: string): Promise<Booking[]> {
   ]);
   return res.documents as unknown as Booking[];
 }
+async function fetchBranches() {
+  const res = await databases.listDocuments(DB, "branches");
+  return res.documents as any[];
+}
 
 // -----------------------------------------
 // MAIN COMPONENT
@@ -134,15 +139,22 @@ export default function CustomerAppointmentForm() {
   const [success, setSuccess] = React.useState<boolean>(false);
   const [isLoadingData, setIsLoadingData] = React.useState<boolean>(true);
 
+  const [branches, setBranches] = React.useState<any[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = React.useState<string>("");
+
   // Load services & dentists on initial mount
   React.useEffect(() => {
-    Promise.all([fetchServices(), fetchDentists()])
-      .then(([fetchedServices, fetchedDentists]) => {
+    Promise.all([fetchServices(), fetchDentists(), fetchBranches()])
+      .then(([fetchedServices, fetchedDentists, fetchedBranches]) => {
         setServices(fetchedServices);
         setDentists(fetchedDentists);
+        setBranches(fetchedBranches);
 
         if (fetchedServices.length > 0) {
           setSelectedServiceId(fetchedServices[0].$id);
+        }
+        if (fetchedBranches.length > 0) {
+          setSelectedBranchId(fetchedBranches[0].$id);
         }
       })
       .finally(() => setIsLoadingData(false));
@@ -159,6 +171,29 @@ export default function CustomerAppointmentForm() {
     if (!selectedDate) return;
     loadBookedSlots(selectedDate);
   }, [selectedDate, loadBookedSlots]);
+
+  React.useEffect(() => {
+    setSelectedDentistId("none");
+  }, [selectedBranchId]);
+
+  function generateTimeSlots(startHour: number, endHour: number) {
+    const slots: string[] = [];
+
+    for (let t = startHour; t < endHour; t += 30) {
+      const hours = Math.floor(t / 60);
+      const minutes = t % 60;
+
+      const timeStr = format(new Date(2000, 0, 1, hours, minutes), "hh:mm a");
+
+      slots.push(timeStr);
+    }
+
+    return slots;
+  }
+
+  const branchDetails = React.useMemo(() => {
+    return branches.find((b) => b.$id === selectedBranchId) || null;
+  }, [selectedBranchId, branches]);
 
   // Derived state for service details
   const serviceDetails = React.useMemo(() => {
@@ -180,14 +215,18 @@ export default function CustomerAppointmentForm() {
 
   const selectedDentistName = dentistToUse?.name ?? "";
 
-  // Derived state for available time slots (simple conflict checking)
   const slots = React.useMemo(() => {
-    if (!selectedDate) return [];
+    if (!selectedDate || !selectedBranchId) return [];
+
+    const branch = branches.find((b) => b.$id === selectedBranchId);
+    if (!branch) return [];
+
+    const timeSlots = generateTimeSlots(branch.startHour, branch.endHour);
 
     const bookedTimes = bookedSlots.map((b) => b.time);
 
-    return TIME_OPTIONS.filter((t) => !bookedTimes.includes(t));
-  }, [selectedDate, bookedSlots]);
+    return timeSlots.filter((t) => !bookedTimes.includes(t));
+  }, [selectedDate, selectedBranchId, bookedSlots]);
 
   // Reset selected time when date/preferences change
   React.useEffect(() => {
@@ -219,6 +258,12 @@ export default function CustomerAppointmentForm() {
     setSuccess(false);
   }, [loadBookedSlots, services]);
 
+  // Dentists belonging to the selected branch
+  const filteredDentists = React.useMemo(() => {
+    if (!selectedBranchId) return dentists;
+    return dentists.filter((d) => d.branchId === selectedBranchId);
+  }, [selectedBranchId, dentists]);
+
   // Submit booking
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -239,6 +284,10 @@ export default function CustomerAppointmentForm() {
         name,
         email,
         phone,
+
+        branchId: selectedBranchId,
+        branchName:
+          branches.find((b) => b.$id === selectedBranchId)?.name || "",
 
         serviceId: selectedServiceId,
         dentistId: selectedDentistId === "none" ? null : selectedDentistId,
@@ -508,6 +557,27 @@ export default function CustomerAppointmentForm() {
             </Select>
           </div>
 
+          {/* Branch Selection */}
+          <div className="space-y-2">
+            <Label>Select Branch *</Label>
+            <Select
+              value={selectedBranchId}
+              onValueChange={setSelectedBranchId}
+              disabled={isLoadingData}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a branch" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((b) => (
+                  <SelectItem key={b.$id} value={b.$id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Dentist */}
           <div className="space-y-2">
             <Label>Dentist (Optional)</Label>
@@ -521,7 +591,7 @@ export default function CustomerAppointmentForm() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No Preference</SelectItem>
-                {dentists.map((d) => (
+                {filteredDentists.map((d) => (
                   <SelectItem key={d.$id} value={d.$id}>
                     {d.name}
                   </SelectItem>
