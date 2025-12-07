@@ -7,6 +7,7 @@ import {
   User,
   Calendar as CalendarIcon,
   CheckCircle,
+  Pencil,
 } from "lucide-react";
 
 import { format, isBefore, startOfDay } from "date-fns";
@@ -15,6 +16,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea"; // Import Textarea for multi-line input
 import {
   Select,
   SelectContent,
@@ -49,6 +51,7 @@ export interface Booking {
   name: string;
   email: string;
   phone: string;
+  note: string;
   serviceId: string;
   dentistId: string | null;
   date: string;
@@ -66,29 +69,6 @@ const DB = process.env.NEXT_PUBLIC_DATABASE_ID!;
 const SERVICES = "services";
 const DENTISTS = "dentists";
 const BOOKINGS = "appointments";
-
-// -----------------------------------------
-// STATIC TIME OPTIONS (30-min intervals)
-// -----------------------------------------
-const TIME_OPTIONS = [
-  "09:00 AM",
-  "09:30 AM",
-  "10:00 AM",
-  "10:30 AM",
-  "11:00 AM",
-  "11:30 AM",
-  "12:00 PM",
-  "12:30 PM",
-  "01:00 PM",
-  "01:30 PM",
-  "02:00 PM",
-  "02:30 PM",
-  "03:00 PM",
-  "03:30 PM",
-  "04:00 PM",
-  "04:30 PM",
-  "05:00 PM",
-];
 
 // -----------------------------------------
 // FETCH FUNCTIONS
@@ -134,6 +114,7 @@ export default function CustomerAppointmentForm() {
   const [name, setName] = React.useState<string>("");
   const [email, setEmail] = React.useState<string>("");
   const [phone, setPhone] = React.useState<string>("");
+  const [note, setNote] = React.useState<string>("");
 
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
   const [success, setSuccess] = React.useState<boolean>(false);
@@ -239,6 +220,7 @@ export default function CustomerAppointmentForm() {
     setName("");
     setEmail("");
     setPhone("");
+    setNote("");
 
     // 2. Reset selections
     const today = new Date();
@@ -284,6 +266,7 @@ export default function CustomerAppointmentForm() {
         name,
         email,
         phone,
+        note,
 
         branchId: selectedBranchId,
         branchName:
@@ -523,7 +506,7 @@ export default function CustomerAppointmentForm() {
           </div>
 
           <div className="space-y-2">
-            <Label>Phone *</Label>
+            <Label>Mobile *</Label>
             <Input
               type="tel"
               required
@@ -533,12 +516,25 @@ export default function CustomerAppointmentForm() {
           </div>
 
           <h3 className="font-semibold text-xl flex items-center gap-2 text-teal-700">
+            <Pencil className="h-5 w-5" /> Notes (Optional)
+          </h3>
+
+          <div className="space-y-2">
+            <Label>Any specific concerns or requests?</Label>
+            <Textarea // ⬅️ New Textarea field for notes
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g., I have a toothache on my left side."
+            />
+          </div>
+
+          <h3 className="font-semibold text-xl flex items-center gap-2 text-teal-700">
             <Stethoscope className="h-5 w-5" /> Preferences
           </h3>
 
           {/* Services */}
           <div className="space-y-2">
-            <Label>Select Service *</Label>
+            <Label>Select Procedure *</Label>
             <Select
               value={selectedServiceId}
               onValueChange={setSelectedServiceId}
