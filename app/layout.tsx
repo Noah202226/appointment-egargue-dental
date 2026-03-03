@@ -12,6 +12,7 @@ const geistMono = Geist_Mono({
 });
 
 import type { Metadata, Viewport } from "next";
+import { Toaster } from "sonner";
 
 const APP_NAME = "PWA Template";
 const APP_DEFAULT_TITLE = "Egargue Dental Group. Appointments";
@@ -69,6 +70,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <Toaster />
       </body>
     </html>
   );
