@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { format, isBefore, startOfDay } from "date-fns";
-import { Calendar as CalendarIcon, Loader2, Save } from "lucide-react";
+import { Loader2, Save, CheckCircle2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
 // Interfaces
@@ -10,11 +10,6 @@ export interface Service {
   $id: string;
   name: string;
   duration: number;
-}
-export interface Dentist {
-  $id: string;
-  name: string;
-  branchId: string;
 }
 
 // UI Components
@@ -35,8 +30,6 @@ import {
 import { databases, ID } from "@/lib/appwrite";
 
 const DB = process.env.NEXT_PUBLIC_DATABASE_ID!;
-const SERVICES = "services";
-const DENTISTS = "dentists";
 const BOOKINGS = "appointments";
 
 const REASONS = [
@@ -52,34 +45,40 @@ const REASONS = [
   "Filling (Pasta)",
 ];
 
-export default function SimpleAppointmentForm() {
-  const [services, setServices] = React.useState<Service[]>([]);
+export default function AppointmentFormWithRemarks() {
   const [branches, setBranches] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isSuccess, setIsSuccess] = React.useState(false);
 
   const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(
     new Date(),
   );
-  const [formData, setFormData] = React.useState({
-    patientType: "New", // Default from image
-    reason: "",
-    referral: "",
+
+  const initialFormState = {
+    patientType: "New",
+    reasons: [] as string[],
+    otherReasonText: "",
+    referralSource: "",
     name: "",
     email: "",
     phone: "",
     branchId: "",
-    notes: "",
-  });
+    note: "",
+  };
+
+  const [formData, setFormData] = React.useState(initialFormState);
+
+  const handleReset = () => {
+    setFormData(initialFormState);
+    setSelectedDate(new Date());
+    setIsSuccess(false);
+  };
 
   React.useEffect(() => {
     const fetchData = async () => {
       try {
-        const [s, b] = await Promise.all([
-          databases.listDocuments(DB, SERVICES),
-          databases.listDocuments(DB, "branches"),
-        ]);
-        setServices(s.documents as any);
+        const b = await databases.listDocuments(DB, "branches");
         setBranches(b.documents as any);
       } catch (error) {
         toast.error("Failed to load clinical data.");
@@ -90,22 +89,43 @@ export default function SimpleAppointmentForm() {
     fetchData();
   }, []);
 
+  const toggleReason = (reason: string) => {
+    setFormData((prev) => {
+      const isSelected = prev.reasons.includes(reason);
+      if (isSelected) {
+        return { ...prev, reasons: prev.reasons.filter((r) => r !== reason) };
+      } else {
+        return { ...prev, reasons: [...prev.reasons, reason] };
+      }
+    });
+  };
+
+  const isOthersSelected = formData.reasons.includes("Others");
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDate) return toast.error("Please select a date");
+    if (formData.reasons.length === 0)
+      return toast.error("Please select a reason");
+    if (isOthersSelected && !formData.otherReasonText.trim())
+      return toast.error("Please specify the 'Other' reason");
 
     setIsSubmitting(true);
 
-    // Updated payload to include email
+    // FIX: Map the array and keep it as an array to match Appwrite's schema
+    const finalReasonsArray = formData.reasons.map((r) =>
+      r === "Others" ? `Other: ${formData.otherReasonText}` : r,
+    );
+
     const payload = {
       name: formData.name,
-      email: formData.email, // Ensure this exists in Appwrite Attributes
+      email: formData.email,
       phone: formData.phone,
       patientType: formData.patientType,
-      reason: formData.reason,
-      referral: formData.referral,
+      reason: finalReasonsArray, // Send as Array, not .join(", ")
+      referralSource: formData.referralSource,
       branchId: formData.branchId,
-      notes: formData.notes || "",
+      note: formData.note || "",
       date: selectedDate.toISOString(),
       dateKey: format(selectedDate, "yyyy-MM-dd"),
       status: "pending",
@@ -114,9 +134,8 @@ export default function SimpleAppointmentForm() {
     try {
       await databases.createDocument(DB, BOOKINGS, ID.unique(), payload);
       toast.success("Appointment requested successfully!");
-      // Reset logic...
+      setIsSuccess(true); // Trigger Success View
     } catch (error: any) {
-      console.error("Submission Error:", error);
       toast.error(`Submission Failed: ${error.message}`);
     } finally {
       setIsSubmitting(false);
@@ -130,6 +149,35 @@ export default function SimpleAppointmentForm() {
       </div>
     );
 
+  // NEW: Success Message UI
+  if (isSuccess) {
+    return (
+      <div className="max-w-md mx-auto mt-20 p-4">
+        <Card className="p-8 text-center border-none shadow-2xl bg-white space-y-6 animate-in zoom-in-95 duration-300">
+          <div className="bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto">
+            <CheckCircle2 className="w-12 h-12 text-green-600" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-slate-900">
+              Appointment Requested!
+            </h2>
+            <p className="text-slate-500">
+              Thank you, <span className="font-semibold">{formData.name}</span>.
+              We've received your request for {format(selectedDate!, "MMMM do")}{" "}
+              and will contact you shortly.
+            </p>
+          </div>
+          <Button
+            onClick={handleReset}
+            className="w-full py-6 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl"
+          >
+            <ArrowLeft className="mr-2 w-4 h-4" /> Book Another Appointment
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-4 bg-slate-50 min-h-screen">
       <Card className="p-8 border-none shadow-xl bg-white">
@@ -137,7 +185,7 @@ export default function SimpleAppointmentForm() {
           onSubmit={handleSubmit}
           className="grid grid-cols-1 lg:grid-cols-2 gap-12"
         >
-          {/* LEFT COLUMN: Patient & Reason */}
+          {/* LEFT COLUMN */}
           <div className="space-y-8">
             <section className="space-y-4">
               <Label className="text-lg font-bold">
@@ -149,7 +197,7 @@ export default function SimpleAppointmentForm() {
                     key={t}
                     type="button"
                     variant={formData.patientType === t ? "default" : "outline"}
-                    className="flex-1 py-6 text-md font-semibold border-blue-200"
+                    className="flex-1 py-6 font-semibold"
                     onClick={() => setFormData({ ...formData, patientType: t })}
                   >
                     {t}
@@ -163,18 +211,40 @@ export default function SimpleAppointmentForm() {
                 Reason for Visit <span className="text-red-500">*</span>
               </Label>
               <div className="flex flex-wrap gap-2">
-                {REASONS.map((r) => (
+                {[...REASONS, "Others"].map((r) => (
                   <Button
                     key={r}
                     type="button"
-                    variant={formData.reason === r ? "default" : "outline"}
-                    className={`h-auto py-2 px-4 text-xs font-medium rounded-md transition-all ${formData.reason === r ? "bg-blue-600" : "text-blue-600 border-blue-200 hover:bg-blue-50"}`}
-                    onClick={() => setFormData({ ...formData, reason: r })}
+                    variant={
+                      formData.reasons.includes(r) ? "default" : "outline"
+                    }
+                    className={`h-auto py-2 px-4 text-xs rounded-md transition-all ${formData.reasons.includes(r) ? "bg-blue-600" : "text-blue-600 border-blue-200"}`}
+                    onClick={() => toggleReason(r)}
                   >
                     {r}
                   </Button>
                 ))}
               </div>
+
+              {isOthersSelected && (
+                <div className="mt-4 animate-in fade-in slide-in-from-top-2">
+                  <Label className="text-sm font-semibold text-blue-700">
+                    Please specify <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    required
+                    placeholder="Describe your concern..."
+                    className="mt-1 border-blue-300"
+                    value={formData.otherReasonText}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        otherReasonText: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              )}
             </section>
 
             <section className="space-y-4">
@@ -184,7 +254,7 @@ export default function SimpleAppointmentForm() {
               </Label>
               <Select
                 onValueChange={(val) =>
-                  setFormData({ ...formData, referral: val })
+                  setFormData({ ...formData, referralSource: val })
                 }
               >
                 <SelectTrigger className="w-full py-6">
@@ -203,28 +273,29 @@ export default function SimpleAppointmentForm() {
               </Select>
             </section>
 
+            {/* REMARKS INPUT RESTORED */}
             <section className="space-y-4">
-              <Label className="text-lg font-bold">Remarks</Label>
+              <Label className="text-lg font-bold">
+                Remarks / Additional Notes
+              </Label>
               <Textarea
-                placeholder="Personal Message, Preferred dentist, Special Requests"
-                className="min-h-[100px] bg-slate-50"
-                value={formData.notes}
+                placeholder="Preferred dentist, medical history notes, or special requests..."
+                className="min-h-[120px] bg-slate-50 border-slate-200"
+                value={formData.note}
                 onChange={(e) =>
-                  setFormData({ ...formData, notes: e.target.value })
+                  setFormData({ ...formData, note: e.target.value })
                 }
               />
+              <p className="text-xs text-slate-400 italic">
+                - Personal Message / Preferred dentist / Special Requests
+              </p>
             </section>
           </div>
 
-          {/* RIGHT COLUMN: Calendar & Contact */}
+          {/* RIGHT COLUMN */}
           <div className="space-y-8">
             <section className="space-y-4">
-              <div className="flex justify-between items-center">
-                <Label className="text-lg font-bold">Select Date</Label>
-                <span className="text-blue-600 font-bold">
-                  {format(selectedDate || new Date(), "MMMM yyyy")}
-                </span>
-              </div>
+              <Label className="text-lg font-bold">Select Date</Label>
               <Calendar
                 mode="single"
                 selected={selectedDate}
@@ -232,77 +303,62 @@ export default function SimpleAppointmentForm() {
                 disabled={(date) =>
                   isBefore(date, startOfDay(new Date())) || date.getDay() === 0
                 }
-                className="rounded-xl border shadow-sm p-4 w-full bg-white flex justify-center"
+                className="w-full"
               />
             </section>
 
             <section className="space-y-4 pt-4 border-t">
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-2">
-                  <Label className="font-semibold">Full Name</Label>
-                  <Input
-                    required
-                    placeholder="Juan Dela Cruz"
-                    className="py-6"
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="font-semibold">Mobile Number</Label>
-                  <Input
-                    required
-                    placeholder="09XXXXXXXXX"
-                    className="py-6"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                  />
-                </div>
-
-                {/* --- NEW EMAIL FIELD --- */}
-                <div className="space-y-2">
-                  <Label className="font-semibold">Email Address</Label>
-                  <Input
-                    required
-                    type="email"
-                    placeholder="email@example.com"
-                    className="py-6"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="font-semibold">Preferred Branch</Label>
-                  <Select
-                    onValueChange={(val) =>
-                      setFormData({ ...formData, branchId: val })
-                    }
-                  >
-                    <SelectTrigger className="py-6">
-                      <SelectValue placeholder="Choose branch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {branches.map((b) => (
-                        <SelectItem key={b.$id} value={b.$id}>
-                          {b.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-4">
+                <Input
+                  required
+                  placeholder="Full Name"
+                  className="py-6"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                />
+                <Input
+                  required
+                  type="email"
+                  placeholder="Email Address"
+                  className="py-6"
+                  value={formData.email}
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
+                />
+                <Input
+                  required
+                  placeholder="Mobile Number"
+                  className="py-6"
+                  value={formData.phone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, phone: e.target.value })
+                  }
+                />
+                <Select
+                  onValueChange={(val) =>
+                    setFormData({ ...formData, branchId: val })
+                  }
+                >
+                  <SelectTrigger className="py-6">
+                    <SelectValue placeholder="Choose branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.map((b) => (
+                      <SelectItem key={b.$id} value={b.$id}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </section>
 
             <Button
               disabled={isSubmitting}
-              className="w-full py-8 bg-blue-600 hover:bg-blue-700 text-white text-lg font-bold rounded-xl shadow-lg shadow-blue-200"
+              className="w-full py-8 bg-blue-600 hover:bg-blue-700 text-white text-lg font-bold rounded-xl transition-all active:scale-95"
             >
               {isSubmitting ? (
                 <Loader2 className="animate-spin mr-2" />
