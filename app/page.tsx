@@ -32,7 +32,8 @@ import { Query } from "appwrite";
 
 const DB = process.env.NEXT_PUBLIC_DATABASE_ID!;
 const BOOKINGS = "appointments";
-const CLINIC_HOURS = "clinichours"; // Your new collection ID
+const CLINIC_HOURS = "clinichours";
+const DENTISTS = "dentists";
 
 const REASONS = [
   "Checkup",
@@ -49,6 +50,7 @@ const REASONS = [
 
 export default function AppointmentFormWithRemarks() {
   const [branches, setBranches] = React.useState<any[]>([]);
+  const [dentists, setDentists] = React.useState<any[]>([]);
   const [clinicSettings, setClinicSettings] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -68,6 +70,9 @@ export default function AppointmentFormWithRemarks() {
     email: "",
     phone: "",
     branchId: "",
+    branchName: "",
+    dentistId: "",
+    dentistName: "",
     note: "",
   };
 
@@ -79,29 +84,53 @@ export default function AppointmentFormWithRemarks() {
     setIsSuccess(false);
   };
 
-  // 1. Fetch Branches and Clinic Hours
+  // 1. Initial Load: Fetch Branches
   React.useEffect(() => {
-    const fetchData = async () => {
+    const fetchInitialData = async () => {
       try {
-        const [b, h] = await Promise.all([
-          databases.listDocuments(DB, "branches"),
-          databases.listDocuments(DB, CLINIC_HOURS),
-        ]);
+        const b = await databases.listDocuments(DB, "branches");
         setBranches(b.documents);
-        setClinicSettings(h.documents);
       } catch (error) {
-        toast.error("Failed to load clinic settings.");
+        toast.error("Failed to load branches.");
       } finally {
         setIsLoading(false);
       }
     };
-    fetchData();
+    fetchInitialData();
   }, []);
 
+  // 2. Branch Selection Effect: Fetch Branch-specific Hours and Dentists
+  React.useEffect(() => {
+    if (!formData.branchId) return;
+
+    const fetchBranchContext = async () => {
+      try {
+        const [hoursRes, dentistsRes] = await Promise.all([
+          databases.listDocuments(DB, CLINIC_HOURS, [
+            Query.equal("branchId", formData.branchId),
+          ]),
+          databases.listDocuments(DB, DENTISTS, [
+            Query.equal("branchId", formData.branchId),
+          ]),
+        ]);
+        setClinicSettings(hoursRes.documents);
+        setDentists(dentistsRes.documents);
+        // Reset time and dentist when branch changes to avoid invalid combinations
+        setSelectedTime("");
+        setFormData((prev) => ({ ...prev, dentistId: "" }));
+      } catch (error) {
+        toast.error("Error loading branch details.");
+      }
+    };
+
+    fetchBranchContext();
+  }, [formData.branchId]);
+
+  // 3. Dynamic Time Slots Calculation
   const dynamicTimeSlots = React.useMemo(() => {
     if (!selectedDate || clinicSettings.length === 0) return [];
 
-    const dayName = format(selectedDate, "EEEE"); // e.g., "Monday"
+    const dayName = format(selectedDate, "EEEE");
     const daySetting = clinicSettings.find((s) => s.day === dayName);
 
     if (!daySetting || !daySetting.isOpen) return [];
@@ -118,28 +147,30 @@ export default function AppointmentFormWithRemarks() {
     return slots;
   }, [selectedDate, clinicSettings]);
 
-  React.useEffect(() => {
-    if (!formData.branchId) return;
+  // 4. Calendar Restriction: Disable closed days for the branch
+  const isDayDisabled = (date: Date) => {
+    const pastDate = isBefore(date, startOfDay(new Date()));
+    const dayName = format(date, "EEEE");
+    const daySetting = clinicSettings.find((s) => s.day === dayName);
 
-    const fetchBranchHours = async () => {
-      // Fetch specifically for the branch the user just selected
-      const res = await databases.listDocuments(DB, CLINIC_HOURS, [
-        Query.equal("branchId", formData.branchId),
-      ]);
-      setClinicSettings(res.documents);
-    };
+    // If we have settings for this branch, check if it's closed
+    if (clinicSettings.length > 0) {
+      return pastDate || !daySetting || !daySetting.isOpen;
+    }
 
-    fetchBranchHours();
-  }, [formData.branchId]);
+    // Default fallback while loading or if no branch selected
+    return pastDate || date.getDay() === 0;
+  };
 
   const toggleReason = (reason: string) => {
     setFormData((prev) => {
       const isSelected = prev.reasons.includes(reason);
-      if (isSelected) {
-        return { ...prev, reasons: prev.reasons.filter((r) => r !== reason) };
-      } else {
-        return { ...prev, reasons: [...prev.reasons, reason] };
-      }
+      return {
+        ...prev,
+        reasons: isSelected
+          ? prev.reasons.filter((r) => r !== reason)
+          : [...prev.reasons, reason],
+      };
     });
   };
 
@@ -148,17 +179,13 @@ export default function AppointmentFormWithRemarks() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDate) return toast.error("Please select a date");
+    if (!selectedTime) return toast.error("Please select a time slot");
     if (formData.reasons.length === 0)
       return toast.error("Please select a reason");
-    if (isOthersSelected && !formData.otherReasonText.trim())
-      return toast.error("Please specify the 'Other' reason");
     if (!formData.branchId) return toast.error("Please select a branch");
-    if (!formData.referralSource)
-      return toast.error("Please select how you heard about us");
 
     setIsSubmitting(true);
 
-    // FIX: Map the array and keep it as an array to match Appwrite's schema
     const finalReasonsArray = formData.reasons.map((r) =>
       r === "Others" ? `Other: ${formData.otherReasonText}` : r,
     );
@@ -171,10 +198,14 @@ export default function AppointmentFormWithRemarks() {
       reason: finalReasonsArray,
       referralSource: formData.referralSource,
       branchId: formData.branchId,
+      branchName: formData.branchName,
+      dentistId: formData.dentistId || null, // Optional
+      dentistName: formData.dentistName,
       note: formData.note || "",
       date: selectedDate.toISOString(),
+      time: selectedTime, // FIXED: Now saving the selected time
       dateKey: format(selectedDate, "yyyy-MM-dd"),
-      status: "pending", // Status is crucial for the main app to filter
+      status: "pending",
     };
 
     try {
@@ -295,6 +326,40 @@ export default function AppointmentFormWithRemarks() {
 
             <section className="space-y-4">
               <Label className="text-lg font-bold">
+                Preferred Dentist (Optional)
+              </Label>
+              <Select
+                onValueChange={(val) => {
+                  const selectedDentist = dentists.find((d) => d.$id === val);
+                  setFormData({
+                    ...formData,
+                    dentistId: val,
+                    dentistName: selectedDentist?.name || "",
+                  });
+                }}
+                value={formData.dentistId}
+              >
+                <SelectTrigger className="w-full py-6">
+                  <SelectValue
+                    placeholder={
+                      formData.branchId
+                        ? "Choose a dentist"
+                        : "Select a branch first"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {dentists.map((d) => (
+                    <SelectItem key={d.$id} value={d.$id}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </section>
+
+            <section className="space-y-4">
+              <Label className="text-lg font-bold">
                 How did you hear about us?{" "}
                 <span className="text-red-500">*</span>
               </Label>
@@ -341,24 +406,48 @@ export default function AppointmentFormWithRemarks() {
           {/* RIGHT COLUMN */}
           <div className="space-y-8">
             <section className="space-y-4">
+              <Label className="text-lg font-bold">Select Branch *</Label>
+              <Select
+                onValueChange={(val) => {
+                  // Find the branch object to get the name
+                  const selectedBranch = branches.find((b) => b.$id === val);
+                  setFormData({
+                    ...formData,
+                    branchId: val,
+                    branchName: selectedBranch?.name || "",
+                  });
+                }}
+                value={formData.branchId}
+              >
+                <SelectTrigger className="py-6 border-blue-200 bg-blue-50/30">
+                  <SelectValue placeholder="Choose clinic branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((b) => (
+                    <SelectItem key={b.$id} value={b.$id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </section>
+
+            <section className="space-y-4">
               <Label className="text-lg font-bold">Select Date</Label>
               <Calendar
                 mode="single"
                 selected={selectedDate}
                 onSelect={setSelectedDate}
-                disabled={(date) =>
-                  isBefore(date, startOfDay(new Date())) || date.getDay() === 0
-                }
-                className="w-full"
+                disabled={isDayDisabled}
+                className="w-full border rounded-xl"
               />
             </section>
 
             <section className="space-y-4">
               <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-slate-500" />
+                <Clock className="w-5 h-5" />
                 <Label className="text-lg font-bold">Available Slots</Label>
               </div>
-
               {dynamicTimeSlots.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
                   {dynamicTimeSlots.map((time) => (
@@ -374,8 +463,10 @@ export default function AppointmentFormWithRemarks() {
                   ))}
                 </div>
               ) : (
-                <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm text-center border border-red-100">
-                  The clinic is closed on this day. Please select another date.
+                <div className="p-4 bg-slate-100 text-slate-500 rounded-lg text-sm text-center italic">
+                  {formData.branchId
+                    ? "Clinic is closed on this date."
+                    : "Please select a branch to see availability."}
                 </div>
               )}
             </section>
@@ -410,22 +501,6 @@ export default function AppointmentFormWithRemarks() {
                     setFormData({ ...formData, phone: e.target.value })
                   }
                 />
-                <Select
-                  onValueChange={(val) =>
-                    setFormData({ ...formData, branchId: val })
-                  }
-                >
-                  <SelectTrigger className="py-6">
-                    <SelectValue placeholder="Choose branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {branches.map((b) => (
-                      <SelectItem key={b.$id} value={b.$id}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
             </section>
 
