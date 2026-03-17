@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { format, isBefore, startOfDay } from "date-fns";
-import { Loader2, Save, CheckCircle2, ArrowLeft } from "lucide-react";
+import { addMinutes, format, isBefore, parse, startOfDay } from "date-fns";
+import { Loader2, Save, CheckCircle2, ArrowLeft, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 // Interfaces
@@ -28,9 +28,11 @@ import {
 } from "@/components/ui/select";
 
 import { databases, ID } from "@/lib/appwrite";
+import { Query } from "appwrite";
 
 const DB = process.env.NEXT_PUBLIC_DATABASE_ID!;
 const BOOKINGS = "appointments";
+const CLINIC_HOURS = "clinichours"; // Your new collection ID
 
 const REASONS = [
   "Checkup",
@@ -47,6 +49,7 @@ const REASONS = [
 
 export default function AppointmentFormWithRemarks() {
   const [branches, setBranches] = React.useState<any[]>([]);
+  const [clinicSettings, setClinicSettings] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isSuccess, setIsSuccess] = React.useState(false);
@@ -54,6 +57,7 @@ export default function AppointmentFormWithRemarks() {
   const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(
     new Date(),
   );
+  const [selectedTime, setSelectedTime] = React.useState<string>("");
 
   const initialFormState = {
     patientType: "New",
@@ -75,19 +79,58 @@ export default function AppointmentFormWithRemarks() {
     setIsSuccess(false);
   };
 
+  // 1. Fetch Branches and Clinic Hours
   React.useEffect(() => {
     const fetchData = async () => {
       try {
-        const b = await databases.listDocuments(DB, "branches");
-        setBranches(b.documents as any);
+        const [b, h] = await Promise.all([
+          databases.listDocuments(DB, "branches"),
+          databases.listDocuments(DB, CLINIC_HOURS),
+        ]);
+        setBranches(b.documents);
+        setClinicSettings(h.documents);
       } catch (error) {
-        toast.error("Failed to load clinical data.");
+        toast.error("Failed to load clinic settings.");
       } finally {
         setIsLoading(false);
       }
     };
     fetchData();
   }, []);
+
+  const dynamicTimeSlots = React.useMemo(() => {
+    if (!selectedDate || clinicSettings.length === 0) return [];
+
+    const dayName = format(selectedDate, "EEEE"); // e.g., "Monday"
+    const daySetting = clinicSettings.find((s) => s.day === dayName);
+
+    if (!daySetting || !daySetting.isOpen) return [];
+
+    const slots = [];
+    let current = parse(daySetting.openTime, "hh:mm a", new Date());
+    const end = parse(daySetting.closeTime, "hh:mm a", new Date());
+    const duration = daySetting.slotDuration || 30;
+
+    while (isBefore(current, end)) {
+      slots.push(format(current, "hh:mm a"));
+      current = addMinutes(current, duration);
+    }
+    return slots;
+  }, [selectedDate, clinicSettings]);
+
+  React.useEffect(() => {
+    if (!formData.branchId) return;
+
+    const fetchBranchHours = async () => {
+      // Fetch specifically for the branch the user just selected
+      const res = await databases.listDocuments(DB, CLINIC_HOURS, [
+        Query.equal("branchId", formData.branchId),
+      ]);
+      setClinicSettings(res.documents);
+    };
+
+    fetchBranchHours();
+  }, [formData.branchId]);
 
   const toggleReason = (reason: string) => {
     setFormData((prev) => {
@@ -109,6 +152,9 @@ export default function AppointmentFormWithRemarks() {
       return toast.error("Please select a reason");
     if (isOthersSelected && !formData.otherReasonText.trim())
       return toast.error("Please specify the 'Other' reason");
+    if (!formData.branchId) return toast.error("Please select a branch");
+    if (!formData.referralSource)
+      return toast.error("Please select how you heard about us");
 
     setIsSubmitting(true);
 
@@ -122,19 +168,19 @@ export default function AppointmentFormWithRemarks() {
       email: formData.email,
       phone: formData.phone,
       patientType: formData.patientType,
-      reason: finalReasonsArray, // Send as Array, not .join(", ")
+      reason: finalReasonsArray,
       referralSource: formData.referralSource,
       branchId: formData.branchId,
       note: formData.note || "",
       date: selectedDate.toISOString(),
       dateKey: format(selectedDate, "yyyy-MM-dd"),
-      status: "pending",
+      status: "pending", // Status is crucial for the main app to filter
     };
 
     try {
       await databases.createDocument(DB, BOOKINGS, ID.unique(), payload);
       toast.success("Appointment requested successfully!");
-      setIsSuccess(true); // Trigger Success View
+      setIsSuccess(true);
     } catch (error: any) {
       toast.error(`Submission Failed: ${error.message}`);
     } finally {
@@ -305,6 +351,33 @@ export default function AppointmentFormWithRemarks() {
                 }
                 className="w-full"
               />
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-slate-500" />
+                <Label className="text-lg font-bold">Available Slots</Label>
+              </div>
+
+              {dynamicTimeSlots.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {dynamicTimeSlots.map((time) => (
+                    <Button
+                      key={time}
+                      type="button"
+                      variant={selectedTime === time ? "default" : "outline"}
+                      className={selectedTime === time ? "bg-blue-600" : ""}
+                      onClick={() => setSelectedTime(time)}
+                    >
+                      {time}
+                    </Button>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm text-center border border-red-100">
+                  The clinic is closed on this day. Please select another date.
+                </div>
+              )}
             </section>
 
             <section className="space-y-4 pt-4 border-t">
