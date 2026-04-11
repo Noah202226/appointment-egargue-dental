@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox"; // Ensure this component exists
 import {
   Select,
   SelectContent,
@@ -29,7 +30,6 @@ import {
 
 import { databases, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
-import { da } from "date-fns/locale";
 
 const DB = process.env.NEXT_PUBLIC_DATABASE_ID!;
 const BOOKINGS = "appointments";
@@ -57,6 +57,10 @@ export default function AppointmentFormWithRemarks() {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isSuccess, setIsSuccess] = React.useState(false);
 
+  // Consent States
+  const [isAcknowledged, setIsAcknowledged] = React.useState(false);
+  const [isTermsAccepted, setIsTermsAccepted] = React.useState(false);
+
   const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(
     new Date(),
   );
@@ -69,7 +73,7 @@ export default function AppointmentFormWithRemarks() {
     referralSource: "",
     name: "",
     email: "",
-    dateOfBirth: "", // Default to today's date in YYYY-MM-DD format
+    dateOfBirth: "",
     address: "",
     gender: "",
     phone: "",
@@ -85,6 +89,8 @@ export default function AppointmentFormWithRemarks() {
   const handleReset = () => {
     setFormData(initialFormState);
     setSelectedDate(new Date());
+    setIsAcknowledged(false);
+    setIsTermsAccepted(false);
     setIsSuccess(false);
   };
 
@@ -119,7 +125,6 @@ export default function AppointmentFormWithRemarks() {
         ]);
         setClinicSettings(hoursRes.documents);
         setDentists(dentistsRes.documents);
-        // Reset time and dentist when branch changes to avoid invalid combinations
         setSelectedTime("");
         setFormData((prev) => ({ ...prev, dentistId: "" }));
       } catch (error) {
@@ -151,18 +156,15 @@ export default function AppointmentFormWithRemarks() {
     return slots;
   }, [selectedDate, clinicSettings]);
 
-  // 4. Calendar Restriction: Disable closed days for the branch
+  // 4. Calendar Restriction
   const isDayDisabled = (date: Date) => {
     const pastDate = isBefore(date, startOfDay(new Date()));
     const dayName = format(date, "EEEE");
     const daySetting = clinicSettings.find((s) => s.day === dayName);
 
-    // If we have settings for this branch, check if it's closed
     if (clinicSettings.length > 0) {
       return pastDate || !daySetting || !daySetting.isOpen;
     }
-
-    // Default fallback while loading or if no branch selected
     return pastDate || date.getDay() === 0;
   };
 
@@ -188,6 +190,13 @@ export default function AppointmentFormWithRemarks() {
       return toast.error("Please select a reason");
     if (!formData.branchId) return toast.error("Please select a branch");
 
+    // Consent Validation
+    if (!isAcknowledged || !isTermsAccepted) {
+      return toast.error(
+        "Please accept the terms and acknowledge the questionnaire to continue.",
+      );
+    }
+
     setIsSubmitting(true);
 
     const finalReasonsArray = formData.reasons.map((r) =>
@@ -206,11 +215,11 @@ export default function AppointmentFormWithRemarks() {
       referralSource: formData.referralSource,
       branchId: formData.branchId,
       branchName: formData.branchName,
-      dentistId: formData.dentistId || null, // Optional
+      dentistId: formData.dentistId || null,
       dentistName: formData.dentistName,
       note: formData.note || "",
       date: selectedDate.toISOString(),
-      time: selectedTime, // FIXED: Now saving the selected time
+      time: selectedTime,
       dateKey: format(selectedDate, "yyyy-MM-dd"),
       status: "pending",
     };
@@ -233,7 +242,6 @@ export default function AppointmentFormWithRemarks() {
       </div>
     );
 
-  // NEW: Success Message UI
   if (isSuccess) {
     return (
       <div className="max-w-md mx-auto mt-20 p-4">
@@ -391,7 +399,6 @@ export default function AppointmentFormWithRemarks() {
               </Select>
             </section>
 
-            {/* REMARKS INPUT RESTORED */}
             <section className="space-y-4">
               <Label className="text-lg font-bold">
                 Remarks / Additional Notes
@@ -416,7 +423,6 @@ export default function AppointmentFormWithRemarks() {
               <Label className="text-lg font-bold">Select Branch *</Label>
               <Select
                 onValueChange={(val) => {
-                  // Find the branch object to get the name
                   const selectedBranch = branches.find((b) => b.$id === val);
                   setFormData({
                     ...formData,
@@ -478,12 +484,12 @@ export default function AppointmentFormWithRemarks() {
               )}
             </section>
 
+            {/* PATIENT INFO SECTION */}
             <section className="space-y-4 pt-4 border-t">
               <div className="space-y-4">
                 <Label className="text-sm font-semibold text-blue-700">
                   Full Name <span className="text-red-500">*</span>
                 </Label>
-
                 <Input
                   required
                   placeholder="Full Name"
@@ -500,7 +506,6 @@ export default function AppointmentFormWithRemarks() {
                 <Input
                   required
                   type="date"
-                  placeholder="Date of Birth"
                   className="py-6"
                   value={formData.dateOfBirth}
                   onChange={(e) =>
@@ -525,10 +530,8 @@ export default function AppointmentFormWithRemarks() {
                 <Label className="text-sm font-semibold text-blue-700">
                   Address <span className="text-red-500">*</span>
                 </Label>
-
                 <Input
                   required
-                  type="text"
                   placeholder="Address"
                   className="py-6"
                   value={formData.address}
@@ -540,14 +543,10 @@ export default function AppointmentFormWithRemarks() {
                 <Label className="text-sm font-semibold text-blue-700">
                   Gender <span className="text-red-500">*</span>
                 </Label>
-
                 <Select
-                  onValueChange={(val) => {
-                    setFormData({
-                      ...formData,
-                      gender: val,
-                    });
-                  }}
+                  onValueChange={(val) =>
+                    setFormData({ ...formData, gender: val })
+                  }
                   value={formData.gender}
                 >
                   <SelectTrigger className="py-6 border-blue-200 bg-blue-50/30">
@@ -575,6 +574,53 @@ export default function AppointmentFormWithRemarks() {
               </div>
             </section>
 
+            {/* CONSENT AND ACKNOWLEDGEMENT SECTION */}
+            <section className="space-y-4 pt-6 border-t">
+              <Label className="text-lg font-bold text-blue-800">
+                Consent and Acknowledgement
+              </Label>
+
+              <div className="space-y-4">
+                <div className="flex items-start space-x-3">
+                  <Checkbox
+                    id="acknowledge"
+                    checked={isAcknowledged}
+                    onCheckedChange={(checked) => setIsAcknowledged(!!checked)}
+                    className="mt-1"
+                  />
+                  <Label
+                    htmlFor="acknowledge"
+                    className="text-xs leading-relaxed text-slate-600 font-normal cursor-pointer"
+                  >
+                    I acknowledge that I have THRUTHFULLY completed the
+                    questionnaire and understand the guidelines. I will seek
+                    assistance from the dental staff if needed. I agree to
+                    disclose all past illnesses, medical, and dental history,
+                    and I understand that providing incorrect information about
+                    medications, allergies, or illnesses can be harmful to my
+                    health. I will inform the dentist or staff of any changes in
+                    my health at my next appointment.
+                  </Label>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <Checkbox
+                    id="terms"
+                    checked={isTermsAccepted}
+                    onCheckedChange={(checked) => setIsTermsAccepted(!!checked)}
+                    className="mt-1"
+                  />
+                  <Label
+                    htmlFor="terms"
+                    className="text-xs leading-relaxed text-slate-600 font-normal cursor-pointer"
+                  >
+                    I agree and accept all the details above as well as Terms
+                    and Conditions and Privacy Policy
+                  </Label>
+                </div>
+              </div>
+            </section>
+
             <Button
               disabled={isSubmitting}
               className="w-full py-8 bg-blue-600 hover:bg-blue-700 text-white text-lg font-bold rounded-xl transition-all active:scale-95"
@@ -584,7 +630,7 @@ export default function AppointmentFormWithRemarks() {
               ) : (
                 <Save className="mr-2" />
               )}
-              Confirm Appointment
+              Submit Appointment
             </Button>
           </div>
         </form>
