@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { addMinutes, format, isBefore, parse, startOfDay } from "date-fns";
+import { add, addMinutes, format, isBefore, parse, startOfDay } from "date-fns";
 import { Loader2, Save, CheckCircle2, ArrowLeft, Clock } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,6 +29,7 @@ import {
 
 import { databases, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
+import { da } from "date-fns/locale";
 
 const DB = process.env.NEXT_PUBLIC_DATABASE_ID!;
 const BOOKINGS = "appointments";
@@ -68,6 +69,9 @@ export default function AppointmentFormWithRemarks() {
     referralSource: "",
     name: "",
     email: "",
+    dateOfBirth: "", // Default to today's date in YYYY-MM-DD format
+    address: "",
+    gender: "",
     phone: "",
     branchId: "",
     branchName: "",
@@ -194,6 +198,9 @@ export default function AppointmentFormWithRemarks() {
       name: formData.name,
       email: formData.email,
       phone: formData.phone,
+      address: formData.address,
+      dateOfBirth: formData.dateOfBirth,
+      gender: formData.gender,
       patientType: formData.patientType,
       reason: finalReasonsArray,
       referralSource: formData.referralSource,
@@ -473,6 +480,10 @@ export default function AppointmentFormWithRemarks() {
 
             <section className="space-y-4 pt-4 border-t">
               <div className="space-y-4">
+                <Label className="text-sm font-semibold text-blue-700">
+                  Full Name <span className="text-red-500">*</span>
+                </Label>
+
                 <Input
                   required
                   placeholder="Full Name"
@@ -482,6 +493,24 @@ export default function AppointmentFormWithRemarks() {
                     setFormData({ ...formData, name: e.target.value })
                   }
                 />
+
+                <Label className="text-sm font-semibold text-blue-700">
+                  Date of Birth <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  required
+                  type="date"
+                  placeholder="Date of Birth"
+                  className="py-6"
+                  value={formData.dateOfBirth}
+                  onChange={(e) =>
+                    setFormData({ ...formData, dateOfBirth: e.target.value })
+                  }
+                />
+
+                <Label className="text-sm font-semibold text-blue-700">
+                  Email Address <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   required
                   type="email"
@@ -492,6 +521,48 @@ export default function AppointmentFormWithRemarks() {
                     setFormData({ ...formData, email: e.target.value })
                   }
                 />
+
+                <Label className="text-sm font-semibold text-blue-700">
+                  Address <span className="text-red-500">*</span>
+                </Label>
+
+                <Input
+                  required
+                  type="text"
+                  placeholder="Address"
+                  className="py-6"
+                  value={formData.address}
+                  onChange={(e) =>
+                    setFormData({ ...formData, address: e.target.value })
+                  }
+                />
+
+                <Label className="text-sm font-semibold text-blue-700">
+                  Gender <span className="text-red-500">*</span>
+                </Label>
+
+                <Select
+                  onValueChange={(val) => {
+                    setFormData({
+                      ...formData,
+                      gender: val,
+                    });
+                  }}
+                  value={formData.gender}
+                >
+                  <SelectTrigger className="py-6 border-blue-200 bg-blue-50/30">
+                    <SelectValue placeholder="Choose gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">Male</SelectItem>
+                    <SelectItem value="female">Female</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Label className="text-sm font-semibold text-blue-700">
+                  Mobile Number <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   required
                   placeholder="Mobile Number"
